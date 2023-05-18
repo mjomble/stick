@@ -4,12 +4,20 @@ import "fmt"
 
 // parseExpr parses an expression.
 func (t *Tree) parseExpr() (Expr, error) {
+	expr, err := t.parseExprWithoutFilterConversion()
+	if err != nil {
+		return nil, err
+	}
+	return convertFilters(expr), nil
+}
+
+func (t *Tree) parseExprWithoutFilterConversion() (Expr, error) {
 	expr, err := t.parseInnerExpr()
 	if err != nil {
 		return nil, err
 	}
-
-	return t.parseOuterExpr(expr)
+	expr, err = t.parseOuterExpr(expr)
+	return expr, err
 }
 
 // parseOuterExpr attempts to parse an expression outside of an inner
@@ -66,37 +74,6 @@ func (t *Tree) parseOuterExpr(expr Expr) (Expr, error) {
 			}
 			return t.parseOuterExpr(NewGetAttrExpr(expr, attr, args, nt.Pos))
 
-		case "|": // Filter application
-			nx, err := t.parseExpr()
-			if err != nil {
-				return nil, err
-			}
-			switch n := nx.(type) {
-			case *BinaryExpr:
-				switch b := n.Left.(type) {
-				case *NameExpr:
-					v := NewFilterExpr(b.Name, []Expr{expr}, nt.Pos)
-					n.Left = v
-					return n, nil
-				case *FuncExpr:
-					b.Args = append([]Expr{expr}, b.Args...)
-					v := NewFilterExpr(b.Name, b.Args, nt.Pos)
-					n.Left = v
-					return n, nil
-				default:
-					return nil, newUnexpectedTokenError(nt)
-				}
-			case *NameExpr:
-				return NewFilterExpr(n.Name, []Expr{expr}, nt.Pos), nil
-
-			case *FuncExpr:
-				n.Args = append([]Expr{expr}, n.Args...)
-				return NewFilterExpr(n.Name, n.Args, n.Pos), nil
-
-			default:
-				return nil, newUnexpectedTokenError(nt)
-			}
-
 		case "?": // Ternary if
 			tx, err := t.parseExpr()
 			if err != nil {
@@ -131,7 +108,7 @@ func (t *Tree) parseOuterExpr(expr Expr) (Expr, error) {
 				return nil, err
 			}
 		} else {
-			right, err = t.parseExpr()
+			right, err = t.parseExprWithoutFilterConversion()
 			if err != nil {
 				return nil, err
 			}
@@ -151,6 +128,28 @@ func (t *Tree) parseOuterExpr(expr Expr) (Expr, error) {
 		t.backup()
 		return expr, nil
 	}
+}
+
+// Filter expressions are initially parsed as binary expressions
+// and converted to their final form here.
+func convertFilters(expr Expr) Expr {
+	if binExpr, ok := expr.(*BinaryExpr); ok {
+		left := convertFilters(binExpr.Left)
+
+		if binExpr.Op == OpBinaryFilter {
+			if funcExpr, ok := binExpr.Right.(*FuncExpr); ok {
+				return NewFilterExpr(funcExpr.Name, append([]Expr{left}, funcExpr.Args...), binExpr.Pos)
+			}
+
+			if nameExpr, ok := binExpr.Right.(*NameExpr); ok {
+				return NewFilterExpr(nameExpr.Name, []Expr{left}, binExpr.Pos)
+			}
+		}
+
+		return NewBinaryExpr(left, binExpr.Op, binExpr.Right, binExpr.Pos)
+	}
+
+	return expr
 }
 
 // parseIsRightOperand handles "is" and "is not" tests, which can

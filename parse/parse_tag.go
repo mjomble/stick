@@ -545,7 +545,7 @@ func parseFilter(t *Tree, start Pos) (Node, error) {
 		switch tok.tokenType {
 		case tokenEOF:
 			return nil, newUnexpectedEOFError(tok)
-		case tokenPunctuation:
+		case tokenOperator:
 			if tok.value != "|" {
 				return nil, newUnexpectedValueError(tok, "|")
 			}

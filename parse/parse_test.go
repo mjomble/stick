@@ -179,6 +179,15 @@ var parseTests = []parseTest{
 		mkModule(NewPrintNode(NewFilterExpr("default", []Expr{NewNameExpr("something", noPos)}, noPos), noPos)),
 	),
 	newParseTest(
+		"chained filters",
+		"{{ something|default(1)|another(2) }}",
+		mkModule(
+			NewPrintNode(
+				NewFilterExpr("another", []Expr{
+					NewFilterExpr("default", []Expr{NewNameExpr("something", noPos), NewNumberExpr("1", noPos)}, noPos),
+					NewNumberExpr("2", noPos)}, noPos), noPos)),
+	),
+	newParseTest(
 		"basic for loop",
 		"{% for val in 1..10 %}body{% endfor %}",
 		mkModule(NewForNode("", "val", NewBinaryExpr(NewNumberExpr("1", noPos), OpBinaryRange, NewNumberExpr("10", noPos), noPos), NewBodyNode(noPos, NewTextNode("body", noPos)), NewBodyNode(noPos), noPos)),
