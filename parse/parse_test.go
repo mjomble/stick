@@ -119,6 +119,36 @@ var parseTests = []parseTest{
 		mkModule(NewPrintNode(NewBinaryExpr(NewNameExpr("something", noPos), OpBinaryAdd, NewNameExpr("else", noPos), noPos), noPos)),
 	),
 	newParseTest(
+		"deeply nested binary operation",
+		"{{ a + b + c + d + e }}",
+		mkModule(
+			NewPrintNode(
+				NewBinaryExpr(
+					NewBinaryExpr(
+						NewBinaryExpr(
+							NewBinaryExpr(
+								NewNameExpr("a", noPos),
+								OpBinaryAdd,
+								NewNameExpr("b", noPos),
+								noPos,
+							),
+							OpBinaryAdd,
+							NewNameExpr("c", noPos),
+							noPos,
+						),
+						OpBinaryAdd,
+						NewNameExpr("d", noPos),
+						noPos,
+					),
+					OpBinaryAdd,
+					NewNameExpr("e", noPos),
+					noPos,
+				),
+				noPos,
+			),
+		),
+	),
+	newParseTest(
 		"number literal binary operation",
 		"{{ 4.123 + else - test }}",
 		mkModule(NewPrintNode(NewBinaryExpr(NewBinaryExpr(NewNumberExpr("4.123", noPos), OpBinaryAdd, NewNameExpr("else", noPos), noPos), OpBinarySubtract, NewNameExpr("test", noPos), noPos), noPos)),
@@ -149,6 +179,62 @@ var parseTests = []parseTest{
 		mkModule(NewPrintNode(NewBinaryExpr(NewBinaryExpr(NewNumberExpr("5", noPos), OpBinaryAdd, NewNumberExpr("10", noPos), noPos), OpBinaryAdd, NewBinaryExpr(NewBinaryExpr(NewNumberExpr("15", noPos), OpBinaryMultiply, NewNumberExpr("12", noPos), noPos), OpBinaryDivide, NewNumberExpr("4", noPos), noPos), noPos), noPos)),
 	),
 	newParseTest(
+		"division before multiplication",
+		"{{ 80 / 10 * 2 }}",
+		mkModule(
+			NewPrintNode(
+				NewBinaryExpr(
+					NewBinaryExpr(
+						NewNumberExpr("80", noPos),
+						OpBinaryDivide,
+						NewNumberExpr("10", noPos),
+						noPos,
+					),
+					OpBinaryMultiply,
+					NewNumberExpr("2", noPos),
+					noPos,
+				),
+				noPos,
+			),
+		),
+	),
+	newParseTest(
+		"division and multiplication on both sides",
+		"{{ 1 / 2 * 3 + 4 / 5 * 6 }}",
+		mkModule(
+			NewPrintNode(
+				NewBinaryExpr(
+					NewBinaryExpr(
+						NewBinaryExpr(
+							NewNumberExpr("1", noPos),
+							OpBinaryDivide,
+							NewNumberExpr("2", noPos),
+							noPos,
+						),
+						OpBinaryMultiply,
+						NewNumberExpr("3", noPos),
+						noPos,
+					),
+					OpBinaryAdd,
+					NewBinaryExpr(
+						NewBinaryExpr(
+							NewNumberExpr("4", noPos),
+							OpBinaryDivide,
+							NewNumberExpr("5", noPos),
+							noPos,
+						),
+						OpBinaryMultiply,
+						NewNumberExpr("6", noPos),
+						noPos,
+					),
+
+					noPos,
+				),
+				noPos,
+			),
+		),
+	),
+	newParseTest(
 		"unary not expression",
 		"{{ not something }}",
 		mkModule(NewPrintNode(NewUnaryExpr(OpUnaryNot, NewNameExpr("something", noPos), noPos), noPos)),
@@ -177,6 +263,62 @@ var parseTests = []parseTest{
 		"filter with no args",
 		"{{ something|default }}",
 		mkModule(NewPrintNode(NewFilterExpr("default", []Expr{NewNameExpr("something", noPos)}, noPos), noPos)),
+	),
+	newParseTest(
+		"chained filters",
+		"{{ something|default(1)|another(2) }}",
+		mkModule(
+			NewPrintNode(
+				NewFilterExpr(
+					"another",
+					[]Expr{
+						NewFilterExpr(
+							"default",
+							[]Expr{
+								NewNameExpr("something", noPos),
+								NewNumberExpr("1", noPos),
+							},
+							noPos,
+						),
+						NewNumberExpr("2", noPos),
+					},
+					noPos,
+				),
+				noPos,
+			),
+		),
+	),
+	newParseTest(
+		"chained filters with no args",
+		"{{ a|b|c|d|e }}",
+		mkModule(
+			NewPrintNode(
+				NewFilterExpr(
+					"e",
+					[]Expr{
+						NewFilterExpr(
+							"d",
+							[]Expr{
+								NewFilterExpr(
+									"c",
+									[]Expr{
+										NewFilterExpr(
+											"b",
+											[]Expr{NewNameExpr("a", noPos)},
+											noPos,
+										),
+									},
+									noPos,
+								),
+							},
+							noPos,
+						),
+					},
+					noPos,
+				),
+				noPos,
+			),
+		),
 	),
 	newParseTest(
 		"basic for loop",

@@ -68,6 +68,7 @@ const (
 	OpBinaryIs           = "is"
 	OpBinaryIsNot        = "is not"
 	OpBinaryPower        = "**"
+	OpBinaryFilter       = "|"
 )
 
 func (o operator) Operator() string {
@@ -116,4 +117,5 @@ var binaryOperators = map[string]operator{
 	OpBinaryIs:           {OpBinaryIs, 100, opLeftAssoc, false},
 	OpBinaryIsNot:        {OpBinaryIsNot, 100, opLeftAssoc, false},
 	OpBinaryPower:        {OpBinaryPower, 200, opRightAssoc, false},
+	OpBinaryFilter:       {OpBinaryFilter, 300, opLeftAssoc, false},
 }

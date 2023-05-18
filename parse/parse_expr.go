@@ -4,12 +4,29 @@ import "fmt"
 
 // parseExpr parses an expression.
 func (t *Tree) parseExpr() (Expr, error) {
+	expr, err := t.parseExprWithoutProcessingBinaries()
+	if err != nil {
+		return nil, err
+	}
+	return processBinaryExpressions(expr), nil
+}
+
+func (t *Tree) parseExprWithoutProcessingBinaries() (Expr, error) {
 	expr, err := t.parseInnerExpr()
 	if err != nil {
 		return nil, err
 	}
+	expr, err = t.parseOuterExpr(expr)
+	return expr, err
+}
 
-	return t.parseOuterExpr(expr)
+func processBinaryExpressions(expr Expr) Expr {
+	if binExpr, ok := expr.(*BinaryExpr); ok {
+		expr = applyLeftAssoc(binExpr)
+		expr = convertFilters(expr)
+	}
+
+	return expr
 }
 
 // parseOuterExpr attempts to parse an expression outside of an inner
@@ -66,37 +83,6 @@ func (t *Tree) parseOuterExpr(expr Expr) (Expr, error) {
 			}
 			return t.parseOuterExpr(NewGetAttrExpr(expr, attr, args, nt.Pos))
 
-		case "|": // Filter application
-			nx, err := t.parseExpr()
-			if err != nil {
-				return nil, err
-			}
-			switch n := nx.(type) {
-			case *BinaryExpr:
-				switch b := n.Left.(type) {
-				case *NameExpr:
-					v := NewFilterExpr(b.Name, []Expr{expr}, nt.Pos)
-					n.Left = v
-					return n, nil
-				case *FuncExpr:
-					b.Args = append([]Expr{expr}, b.Args...)
-					v := NewFilterExpr(b.Name, b.Args, nt.Pos)
-					n.Left = v
-					return n, nil
-				default:
-					return nil, newUnexpectedTokenError(nt)
-				}
-			case *NameExpr:
-				return NewFilterExpr(n.Name, []Expr{expr}, nt.Pos), nil
-
-			case *FuncExpr:
-				n.Args = append([]Expr{expr}, n.Args...)
-				return NewFilterExpr(n.Name, n.Args, n.Pos), nil
-
-			default:
-				return nil, newUnexpectedTokenError(nt)
-			}
-
 		case "?": // Ternary if
 			tx, err := t.parseExpr()
 			if err != nil {
@@ -131,18 +117,9 @@ func (t *Tree) parseOuterExpr(expr Expr) (Expr, error) {
 				return nil, err
 			}
 		} else {
-			right, err = t.parseExpr()
+			right, err = t.parseExprWithoutProcessingBinaries()
 			if err != nil {
 				return nil, err
-			}
-			if v, ok := right.(*BinaryExpr); ok {
-				nxop := binaryOperators[v.Op]
-				if nxop.precedence < op.precedence || (nxop.precedence == op.precedence && op.leftAssoc()) {
-					left := v.Left
-					res := NewBinaryExpr(expr, op.Operator(), left, expr.Start())
-					v.Left = res
-					return v, nil
-				}
 			}
 		}
 		return NewBinaryExpr(expr, op.Operator(), right, expr.Start()), nil
@@ -151,6 +128,51 @@ func (t *Tree) parseOuterExpr(expr Expr) (Expr, error) {
 		t.backup()
 		return expr, nil
 	}
+}
+
+// Binary expressions are initially parsed as right-associative
+// and recursively converted to left-associative here if needed.
+func applyLeftAssoc(expr *BinaryExpr) *BinaryExpr {
+	if right, ok := expr.Right.(*BinaryExpr); ok {
+		op := binaryOperators[expr.Op]
+		nxop := binaryOperators[right.Op]
+		if nxop.precedence < op.precedence || (nxop.precedence == op.precedence && op.leftAssoc()) {
+			left := right.Left
+			res := NewBinaryExpr(expr.Left, op.Operator(), left, expr.Left.Start())
+			right.Left = res
+			return applyLeftAssoc(right)
+		} else {
+			expr.Right = applyLeftAssoc(right)
+		}
+	}
+
+	if left, ok := expr.Left.(*BinaryExpr); ok {
+		expr.Left = applyLeftAssoc(left)
+	}
+
+	return expr
+}
+
+// Filter expressions are initially parsed as binary expressions
+// and recursively converted to their final form here.
+func convertFilters(expr Expr) Expr {
+	if binExpr, ok := expr.(*BinaryExpr); ok {
+		left := convertFilters(binExpr.Left)
+
+		if binExpr.Op == OpBinaryFilter {
+			if funcExpr, ok := binExpr.Right.(*FuncExpr); ok {
+				return NewFilterExpr(funcExpr.Name, append([]Expr{left}, funcExpr.Args...), binExpr.Pos)
+			}
+
+			if nameExpr, ok := binExpr.Right.(*NameExpr); ok {
+				return NewFilterExpr(nameExpr.Name, []Expr{left}, binExpr.Pos)
+			}
+		}
+
+		return NewBinaryExpr(left, binExpr.Op, binExpr.Right, binExpr.Pos)
+	}
+
+	return expr
 }
 
 // parseIsRightOperand handles "is" and "is not" tests, which can
